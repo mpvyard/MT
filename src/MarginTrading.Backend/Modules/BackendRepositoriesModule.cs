@@ -1,6 +1,7 @@
 ﻿using Autofac;
 using AzureStorage.Tables;
 using Common.Log;
+using Lykke.SettingsReader;
 using MarginTrading.AzureRepositories;
 using MarginTrading.AzureRepositories.Reports;
 using MarginTrading.Core;
@@ -13,10 +14,10 @@ namespace MarginTrading.Backend.Modules
 {
 	public class BackendRepositoriesModule : Module
 	{
-		private readonly MarginSettings _settings;
+		private readonly IReloadingManager<MarginSettings> _settings;
 		private readonly ILog _log;
 
-		public BackendRepositoriesModule(MarginSettings settings, ILog log)
+		public BackendRepositoriesModule(IReloadingManager<MarginSettings> settings, ILog log)
 		{
 			_settings = settings;
 			_log = log;
@@ -29,69 +30,68 @@ namespace MarginTrading.Backend.Modules
 				.SingleInstance();
 
 		    builder.Register<IMarginTradingOperationsLogRepository>(ctx =>
-		        new MarginTradingOperationsLogRepository(
-		            AzureTableStorage<OperationLogEntity>.Create(() => _settings.Db.LogsConnString,
+		        new MarginTradingOperationsLogRepository(AzureTableStorage<OperationLogEntity>.Create(_settings.Nested(s => s.Db.LogsConnString),
 		                "MarginTradingBackendOperationsLog", _log))
 		    ).SingleInstance();
 
 			builder.Register<IClientSettingsRepository>(ctx =>
-				AzureRepoFactories.Clients.CreateTraderSettingsRepository(_settings.Db.ClientPersonalInfoConnString, _log)
+				AzureRepoFactories.Clients.CreateTraderSettingsRepository(_settings.Nested(s => s.Db.ClientPersonalInfoConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IClientAccountsRepository>(ctx =>
-				AzureRepoFactories.Clients.CreateClientsRepository(_settings.Db.ClientPersonalInfoConnString, _log)
+				AzureRepoFactories.Clients.CreateClientsRepository(_settings.Nested(s => s.Db.ClientPersonalInfoConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingAccountsRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAccountsRepository(_settings.Db.MarginTradingConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAccountsRepository(_settings.Nested(s => s.Db.MarginTradingConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingOrdersHistoryRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateOrdersHistoryRepository(_settings.Db.HistoryConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateOrdersHistoryRepository(_settings.Nested(s => s.Db.HistoryConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingAccountHistoryRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAccountHistoryRepository(_settings.Db.HistoryConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAccountHistoryRepository(_settings.Nested(s => s.Db.HistoryConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMatchingEngineRoutesRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateMatchingEngineRoutesRepository(_settings.Db.MarginTradingConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateMatchingEngineRoutesRepository(_settings.Nested(s => s.Db.MarginTradingConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingConditionRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateTradingConditionsRepository(_settings.Db.MarginTradingConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateTradingConditionsRepository(_settings.Nested(s => s.Db.MarginTradingConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingAccountGroupRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAccountGroupRepository(_settings.Db.MarginTradingConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAccountGroupRepository(_settings.Nested(s => s.Db.MarginTradingConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingAccountAssetRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAccountAssetsRepository(_settings.Db.MarginTradingConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAccountAssetsRepository(_settings.Nested(s => s.Db.MarginTradingConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingAssetsRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAssetsRepository(_settings.Db.DictsConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAssetsRepository(_settings.Nested(s => s.Db.DictsConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IMarginTradingBlobRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateBlobRepository(_settings.Db.StateConnString)
+				AzureRepoFactories.MarginTrading.CreateBlobRepository(_settings.Nested(s => s.Db.StateConnString))
 			).SingleInstance();
 
 			builder.Register<IServiceMonitoringRepository>(ctx =>
-				AzureRepoFactories.Monitoring.CreateServiceMonitoringRepository(_settings.Db.SharedStorageConnString, _log)
+				AzureRepoFactories.Monitoring.CreateServiceMonitoringRepository(_settings.Nested(s => s.Db.SharedStorageConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IAppGlobalSettingsRepositry>(ctx =>
-				AzureRepoFactories.Settings.CreateAppGlobalSettingsRepository(_settings.Db.ClientPersonalInfoConnString, _log)
+				AzureRepoFactories.Settings.CreateAppGlobalSettingsRepository(_settings.Nested(s => s.Db.ClientPersonalInfoConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IAccountsStatsReportsRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAccountsStatsReportsRepository(_settings.Db.ReportsConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAccountsStatsReportsRepository(_settings.Nested(s => s.Db.ReportsConnString), _log)
 			).SingleInstance();
 
 			builder.Register<IAccountsReportsRepository>(ctx =>
-				AzureRepoFactories.MarginTrading.CreateAccountsReportsRepository(_settings.Db.ReportsConnString, _log)
+				AzureRepoFactories.MarginTrading.CreateAccountsReportsRepository(_settings.Nested(s => s.Db.ReportsConnString), _log)
 			).SingleInstance();
 
 			builder.RegisterType<MatchingEngineInMemoryRepository>()

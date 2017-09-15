@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
-using AzureStorage.Tables;
 using Common.Log;
-using Flurl.Http;
 using Lykke.Common.ApiLibrary.Swagger;
 using Lykke.Logs;
 using Lykke.SettingsReader;
@@ -20,7 +18,6 @@ using MarginTrading.Core;
 using MarginTrading.Core.Settings;
 using MarginTrading.Services;
 using MarginTrading.Services.Infrastructure;
-using MarginTrading.Services.Middleware;
 using MarginTrading.Services.Modules;
 using MarginTrading.Services.Notifications;
 using MarginTrading.Services.Settings;
@@ -29,8 +26,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.PlatformAbstractions;
-using Swashbuckle.Swagger.Model;
 using ILoggerFactory = Microsoft.Extensions.Logging.ILoggerFactory;
 
 #pragma warning disable 1591
@@ -80,21 +75,27 @@ namespace MarginTrading.Backend
                 options.OperationFilter<ApiKeyHeaderOperationFilter>();
             });
 
-            var builder = new ContainerBuilder();
 
-            MtBackendSettings mtSettings = Environment.IsDevelopment()
-                ? Configuration.Get<MtBackendSettings>()
-                : SettingsProcessor.Process<MtBackendSettings>(Configuration["SettingsUrl"].GetStringAsync().Result);
+            var mtSettings = Configuration.LoadSettings<MtBackendSettings>(configure:
+                s =>
+                {
+                    s.MtBackend.MarginTradingDemo.IsLive = isLive;
+                    s.MtBackend.MarginTradingLive.IsLive = isLive;
+                    s.MtBackend.MarginTradingDemo.Env = isLive ? "Live" : "Demo";
+                    s.MtBackend.MarginTradingLive.Env = isLive ? "Live" : "Demo";
+                });
 
-            MarginSettings settings = isLive ? mtSettings.MtBackend.MarginTradingLive : mtSettings.MtBackend.MarginTradingDemo;
-            settings.IsLive = isLive;
-            settings.Env = isLive ? "Live" : "Demo";
+            var settings = isLive
+                ? mtSettings.Nested(s => s.MtBackend.MarginTradingLive)
+                : mtSettings.Nested(s => s.MtBackend.MarginTradingDemo);
 
-            Console.WriteLine($"IsLive: {settings.IsLive}");
+            Console.WriteLine($"IsLive: {isLive}");
 
             SetupLoggers(services, mtSettings, settings);
 
-            RegisterModules(builder, mtSettings, settings, Environment);
+            var builder = new ContainerBuilder();
+
+            RegisterModules(builder, mtSettings.CurrentValue, settings, Environment);
 
             builder.Populate(services);
             ApplicationContainer = builder.Build();
@@ -145,10 +146,11 @@ namespace MarginTrading.Backend
             );
         }
 
-        private void RegisterModules(ContainerBuilder builder, MtBackendSettings mtSettings, MarginSettings settings, IHostingEnvironment environment)
+        private void RegisterModules(ContainerBuilder builder, MtBackendSettings mtSettings, IReloadingManager<MarginSettings> settingsReloadingManager, IHostingEnvironment environment)
         {
+            var settings = settingsReloadingManager.CurrentValue;
             builder.RegisterModule(new BackendSettingsModule(mtSettings, settings));
-            builder.RegisterModule(new BackendRepositoriesModule(settings, LogLocator.CommonLog));
+            builder.RegisterModule(new BackendRepositoriesModule(settingsReloadingManager, LogLocator.CommonLog));
             builder.RegisterModule(new EventModule());
             builder.RegisterModule(new CacheModule());
             builder.RegisterModule(new ManagersModule());
@@ -162,22 +164,22 @@ namespace MarginTrading.Backend
             builder.RegisterBuildCallback(c => c.Resolve<QuoteCacheService>());
         }
 
-        private static void SetupLoggers(IServiceCollection services, MtBackendSettings mtSettings,
-            MarginSettings settings)
+        private static void SetupLoggers(IServiceCollection services, IReloadingManager<MtBackendSettings> mtSettings,
+            IReloadingManager<MarginSettings> settings)
         {
             var consoleLogger = new LogToConsole();
 
             var comonSlackService =
-                services.UseSlackNotificationsSenderViaAzureQueue(mtSettings.SlackNotifications.AzureQueue,
+                services.UseSlackNotificationsSenderViaAzureQueue(mtSettings.CurrentValue.SlackNotifications.AzureQueue,
                     consoleLogger);
 
             var slackService =
-                new MtSlackNotificationsSender(comonSlackService, "MT Backend", settings.Env);
+                new MtSlackNotificationsSender(comonSlackService, "MT Backend", settings.CurrentValue.Env);
 
-            var log = services.UseLogToAzureStorage(settings.Db.LogsConnString,
+            var log = services.UseLogToAzureStorage(settings.Nested(s => s.Db.LogsConnString),
                 slackService, "MarginTradingBackendLog", consoleLogger);
 
-            var requestsLog = services.UseLogToAzureStorage(settings.Db.LogsConnString,
+            var requestsLog = services.UseLogToAzureStorage(settings.Nested(s => s.Db.LogsConnString),
                 slackService, "MarginTradingBackendRequestsLog", consoleLogger);
 
             LogLocator.CommonLog = log;

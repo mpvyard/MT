@@ -116,6 +116,8 @@ namespace MarginTrading.Services
             _accountsCacheService.InitAccountsCache(accounts);
 
             _console.WriteLine($"InitAccountsCache (clients count:{accounts.Count})");
+
+            base.Start();
         }
 
         private async Task ProcessAccountsSetChange(string clientId, IReadOnlyList<MarginTradingAccount> allClientsAccounts = null)

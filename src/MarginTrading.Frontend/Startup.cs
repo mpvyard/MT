@@ -17,6 +17,7 @@ using MarginTrading.AzureRepositories;
 using MarginTrading.AzureRepositories.Settings;
 using MarginTrading.Common.BackendContracts;
 using MarginTrading.Common.ClientContracts;
+using MarginTrading.Common.Extensions;
 using MarginTrading.Common.Json;
 using MarginTrading.Common.RabbitMq;
 using MarginTrading.Common.Wamp;
@@ -30,6 +31,7 @@ using MarginTrading.Frontend.Settings;
 using MarginTrading.Services;
 using MarginTrading.Services.Infrastructure;
 using MarginTrading.Services.Notifications;
+using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -39,12 +41,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.PlatformAbstractions;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using Rocks.Caching;
 using WampSharp.AspNetCore.WebSockets.Server;
 using WampSharp.Binding;
 using WampSharp.V2;
 using WampSharp.V2.MetaApi;
 using WampSharp.V2.Realm;
+
 #pragma warning disable 1591
 
 namespace MarginTrading.Frontend
@@ -70,7 +74,7 @@ namespace MarginTrading.Frontend
 
         public IServiceProvider ConfigureServices(IServiceCollection services)
         {
-            ILoggerFactory loggerFactory = new LoggerFactory()
+            var loggerFactory = new LoggerFactory()
                 .AddConsole(LogLevel.Error)
                 .AddDebug(LogLevel.Error);
 
@@ -80,7 +84,7 @@ namespace MarginTrading.Frontend
             services.AddMvc()
                 .AddJsonOptions(options =>
                 {
-                    options.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver();
+                    options.SerializerSettings.ContractResolver = new DefaultContractResolver();
                     options.SerializerSettings.Converters = SerializerSettings.GetDefaultConverters();
                 });
 
@@ -96,36 +100,36 @@ namespace MarginTrading.Frontend
                     options.SecurityTokenValidators.Clear();
                     options.SecurityTokenValidators.Add(ApplicationContainer.Resolve<ISecurityTokenValidator>());
                 });
-            
+
             var builder = new ContainerBuilder();
 
-            ApplicationSettings appSettings = Environment.IsDevelopment()
-                ? Configuration.Get<ApplicationSettings>()
-                : SettingsProcessor.Process<ApplicationSettings>(Configuration["SettingsUrl"].GetStringAsync().Result);
-
-            MtFrontendSettings settings = appSettings.MtFrontend;
-
-            if (!string.IsNullOrEmpty(Configuration["Env"]))
+            var appSettings = Configuration.LoadSettings<ApplicationSettings>(configure: s =>
             {
-                settings.MarginTradingFront.Env = Configuration["Env"];
-            }
+                if (!string.IsNullOrEmpty(Configuration["Env"]))
+                {
+                    s.MtFrontend.MarginTradingFront.Env = Configuration["Env"];
+                }
+            });
 
-            Console.WriteLine($"Env: {settings.MarginTradingFront.Env}");
+            var settings = appSettings.Nested(s => s.MtFrontend);
+
+            Console.WriteLine($"Env: {settings.CurrentValue.MarginTradingFront.Env}");
 
             SetupLoggers(services, appSettings);
 
-            RegisterDependencies(builder, settings);
+            RegisterDependencies(builder, settings.CurrentValue, settings);
 
             builder.Populate(services);
 
             ApplicationContainer = builder.Build();
 
-            SetSubscribers(settings);
+            SetSubscribers(settings.CurrentValue);
 
             return new AutofacServiceProvider(ApplicationContainer);
         }
 
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory, IApplicationLifetime appLifetime)
+        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory,
+            IApplicationLifetime appLifetime)
         {
             app.UseMiddleware<GlobalErrorHandlerMiddleware>();
             app.UseOptions();
@@ -133,16 +137,13 @@ namespace MarginTrading.Frontend
             var settings = ApplicationContainer.Resolve<MtFrontSettings>();
             app.UseCors(builder => builder.WithOrigins(settings.AllowOrigins));
 
-            IWampHost host = ApplicationContainer.Resolve<IWampHost>();
-            IWampHostedRealm realm = ApplicationContainer.Resolve<IWampHostedRealm>();
-            IDisposable realmMetaService = realm.HostMetaApiService();
-            
+            var host = ApplicationContainer.Resolve<IWampHost>();
+            var realm = ApplicationContainer.Resolve<IWampHostedRealm>();
+            var realmMetaService = realm.HostMetaApiService();
+
             app.UseAuthentication();
 
-            app.UseMvc(routes =>
-            {
-                routes.MapRoute(name: "Default", template: "{controller=Home}/{action=Index}/{id?}");
-            });
+            app.UseMvc(routes => { routes.MapRoute("Default", "{controller=Home}/{action=Index}/{id?}"); });
 
             app.UseSwagger();
             app.UseSwaggerUi();
@@ -153,23 +154,23 @@ namespace MarginTrading.Frontend
                 builder.UseWebSockets(new WebSocketOptions {KeepAliveInterval = TimeSpan.FromMinutes(1)});
 
                 var jsonSettings =
-                    new JsonSerializerSettings() {Converters = SerializerSettings.GetDefaultConverters()};
+                    new JsonSerializerSettings {Converters = SerializerSettings.GetDefaultConverters()};
                 var jsonSerializer = JsonSerializer.Create(jsonSettings);
 
                 host.RegisterTransport(new AspNetCoreWebSocketTransport(builder),
-                                       new JTokenJsonBinding(jsonSerializer),
-                                       new JTokenMsgpackBinding(jsonSerializer));
+                    new JTokenJsonBinding(jsonSerializer),
+                    new JTokenMsgpackBinding(jsonSerializer));
             });
 
             appLifetime.ApplicationStopped.Register(() => ApplicationContainer.Dispose());
 
-            Application application = app.ApplicationServices.GetService<Application>();
+            var application = app.ApplicationServices.GetService<Application>();
 
             appLifetime.ApplicationStarted.Register(() =>
             {
                 if (!string.IsNullOrEmpty(settings.ApplicationInsightsKey))
                 {
-                    Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration.Active.InstrumentationKey =
+                    TelemetryConfiguration.Active.InstrumentationKey =
                         settings.ApplicationInsightsKey;
                 }
 
@@ -186,7 +187,8 @@ namespace MarginTrading.Frontend
             host.Open();
         }
 
-        private void RegisterDependencies(ContainerBuilder builder, MtFrontendSettings settings)
+        private void RegisterDependencies(ContainerBuilder builder, MtFrontendSettings settings,
+            IReloadingManager<MtFrontendSettings> settingsManager)
         {
             var host = new WampHost();
             var realm = host.RealmContainer.GetRealmByName(RealmNames.FrontEnd);
@@ -205,27 +207,34 @@ namespace MarginTrading.Frontend
 
             builder.Register<IMarginTradingOperationsLogRepository>(ctx =>
                     new MarginTradingOperationsLogRepository(AzureTableStorage<OperationLogEntity>.Create(
-                        () => settings.MarginTradingFront.Db.LogsConnString, "MarginTradingFrontendOperationsLog",
+                        settingsManager.Nested(s => s.MarginTradingFront.Db.LogsConnString),
+                        "MarginTradingFrontendOperationsLog",
                         LogLocator.CommonLog))
                 )
                 .SingleInstance();
 
             builder.Register<IClientSettingsRepository>(ctx =>
-                AzureRepoFactories.Clients.CreateTraderSettingsRepository(settings.MarginTradingFront.Db.ClientPersonalInfoConnString, LogLocator.CommonLog)
+                AzureRepoFactories.Clients.CreateTraderSettingsRepository(
+                    settingsManager.Nested(s => s.MarginTradingFront.Db.ClientPersonalInfoConnString),
+                    LogLocator.CommonLog)
             ).SingleInstance();
 
             builder.Register<IClientAccountsRepository>(ctx =>
-                AzureRepoFactories.Clients.CreateClientsRepository(settings.MarginTradingFront.Db.ClientPersonalInfoConnString, LogLocator.CommonLog)
+                AzureRepoFactories.Clients.CreateClientsRepository(
+                    settingsManager.Nested(s => s.MarginTradingFront.Db.ClientPersonalInfoConnString),
+                    LogLocator.CommonLog)
             ).SingleInstance();
 
             builder.Register<IAppGlobalSettingsRepositry>(ctx =>
                 new AppGlobalSettingsRepository(AzureTableStorage<AppGlobalSettingsEntity>.Create(
-                    () => settings.MarginTradingFront.Db.ClientPersonalInfoConnString, "Setup", LogLocator.CommonLog))
+                    settingsManager.Nested(s => s.MarginTradingFront.Db.ClientPersonalInfoConnString), "Setup",
+                    LogLocator.CommonLog))
             ).SingleInstance();
 
             builder.Register<IMarginTradingWatchListRepository>(ctx =>
-               AzureRepoFactories.MarginTrading.CreateWatchListsRepository(settings.MarginTradingFront.Db.MarginTradingConnString, LogLocator.CommonLog)
-           ).SingleInstance();
+                AzureRepoFactories.MarginTrading.CreateWatchListsRepository(
+                    settingsManager.Nested(s => s.MarginTradingFront.Db.MarginTradingConnString), LogLocator.CommonLog)
+            ).SingleInstance();
 
             builder.RegisterType<WatchListService>()
                 .As<IWatchListService>()
@@ -244,26 +253,33 @@ namespace MarginTrading.Frontend
                 .SingleInstance();
 
             var consoleWriter = new ConsoleLWriter(line =>
+            {
+                try
                 {
-                    try
+                    if (settings.MarginTradingFront.RemoteConsoleEnabled &&
+                        !string.IsNullOrEmpty(settings.MarginTradingFront.MetricLoggerLine))
                     {
-                        if (settings.MarginTradingFront.RemoteConsoleEnabled && !string.IsNullOrEmpty(settings.MarginTradingFront.MetricLoggerLine))
-                        {
-                            settings.MarginTradingFront.MetricLoggerLine.PostJsonAsync(
-                                new
+                        settings.MarginTradingFront.MetricLoggerLine.PostJsonAsync(
+                            new
+                            {
+                                Id = "Mt-frontend",
+                                Data =
+                                new[]
                                 {
-                                    Id = "Mt-frontend",
-                                    Data =
-                                    new[]
+                                    new
                                     {
-                                        new { Key = "Version", Value = PlatformServices.Default.Application.ApplicationVersion },
-                                        new { Key = "Data", Value = line }
-                                    }
-                                });
-                        }
+                                        Key = "Version",
+                                        Value = PlatformServices.Default.Application.ApplicationVersion
+                                    },
+                                    new {Key = "Data", Value = line}
+                                }
+                            });
                     }
-                    catch { }
-                });
+                }
+                catch
+                {
+                }
+            });
 
             builder.RegisterInstance(consoleWriter)
                 .As<IConsole>()
@@ -292,8 +308,8 @@ namespace MarginTrading.Frontend
                 .SingleInstance();
 
             builder.RegisterType<MarginTradingSettingsService>()
-               .As<IMarginTradingSettingsService>()
-               .SingleInstance();
+                .As<IMarginTradingSettingsService>()
+                .SingleInstance();
 
             builder.RegisterType<ThreadSwitcherToNewTask>()
                 .As<IThreadSwitcher>()
@@ -320,9 +336,9 @@ namespace MarginTrading.Frontend
                 .SingleInstance();
 
             builder.RegisterType<MemoryCacheProvider>()
-                   .As<ICacheProvider>()
-                   .AsSelf()
-                   .SingleInstance();
+                .As<ICacheProvider>()
+                .AsSelf()
+                .SingleInstance();
 
             builder.RegisterType<DateService>()
                 .As<IDateService>()
@@ -516,8 +532,9 @@ namespace MarginTrading.Frontend
                     .Start();
         }
 
-        private static void SetupLoggers(IServiceCollection services, ApplicationSettings settings)
+        private static void SetupLoggers(IServiceCollection services, IReloadingManager<ApplicationSettings> settingManager)
         {
+            var settings = settingManager.CurrentValue;
             var consoleLogger = new LogToConsole();
 
             var comonSlackService =
@@ -525,12 +542,13 @@ namespace MarginTrading.Frontend
                     consoleLogger);
 
             var slackService =
-                new MtSlackNotificationsSender(comonSlackService, "MT Frontend", settings.MtFrontend.MarginTradingFront.Env);
+                new MtSlackNotificationsSender(comonSlackService, "MT Frontend",
+                    settings.MtFrontend.MarginTradingFront.Env);
 
-            var log = services.UseLogToAzureStorage(settings.MtFrontend.MarginTradingFront.Db.LogsConnString,
+            var log = services.UseLogToAzureStorage(settingManager.Nested(s => s.MtFrontend.MarginTradingFront.Db.LogsConnString),
                 slackService, "MarginTradingFrontendLog", consoleLogger);
 
-            var requestsLog = services.UseLogToAzureStorage(settings.MtFrontend.MarginTradingFront.Db.LogsConnString,
+            var requestsLog = services.UseLogToAzureStorage(settingManager.Nested(s => s.MtFrontend.MarginTradingFront.Db.LogsConnString),
                 slackService, "MarginTradingFrontendRequestsLog", consoleLogger);
 
             LogLocator.CommonLog = log;

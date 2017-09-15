@@ -55,24 +55,23 @@ namespace MarginTrading.Public
 
             var builder = new ContainerBuilder();
 
-            ApplicationSettings appSettings = Environment.IsDevelopment()
-                ? Configuration.Get<ApplicationSettings>()
-                : SettingsProcessor.Process<ApplicationSettings>(Configuration["SettingsUrl"].GetStringAsync().Result);
-
-            MtPublicBaseSettings settings = appSettings.MtPublic;
-
-            if (!string.IsNullOrEmpty(Configuration["Env"]))
+            var appSettings = Configuration.LoadSettings<ApplicationSettings>(configure: s =>
             {
-                settings.Env = Configuration["Env"];
-                Console.WriteLine($"Env: {settings.Env}");
-            }
+                if (!string.IsNullOrEmpty(Configuration["Env"]))
+                {
+                    s.MtPublic.Env = Configuration["Env"];
+                    Console.WriteLine($"Env: {s.MtPublic.Env}");
+                }
+            });
+
+            var settings = appSettings.Nested(s => s.MtPublic);
 
             var consoleLogger = new LogToConsole();
 
-            services.UseLogToAzureStorage(settings.Db.LogsConnString,
+            services.UseLogToAzureStorage(settings.Nested(s => s.Db.LogsConnString),
                 null, "MarginTradingPublicLog", consoleLogger);
 
-            builder.RegisterModule(new PublicApiModule(settings));
+            builder.RegisterModule(new PublicApiModule(settings.CurrentValue));
 
             builder.Populate(services);
 

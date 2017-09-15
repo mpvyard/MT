@@ -1,7 +1,9 @@
 ﻿using Autofac;
 using Common.Log;
+using Lykke.SettingsReader;
 using MarginTrading.AccountMarginEventsBroker.AzureRepositories;
 using MarginTrading.BrokerBase;
+using MarginTrading.Core.Settings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,11 +18,18 @@ namespace MarginTrading.AccountMarginEventsBroker
         }
 
 
-        protected override void RegisterCustomServices(IServiceCollection services, ContainerBuilder builder,
-            Settings settingsRoot, ILog log, bool isLive)
+        protected override void RegisterCustomServices(IServiceCollection services, ContainerBuilder builder, IReloadingManager<Settings> settingsRoot, ILog log, bool isLive)
         {
-            var settings = isLive ? settingsRoot.MtBackend.MarginTradingLive : settingsRoot.MtBackend.MarginTradingDemo;
-            settings.IsLive = isLive;
+            MarginSettings SetLive(MarginSettings s)
+            {
+                s.IsLive = isLive;
+                return s;
+            }
+
+            var settings = isLive
+                ? settingsRoot.Nested(s => SetLive(s.MtBackend.MarginTradingLive))
+                : settingsRoot.Nested(s => SetLive(s.MtBackend.MarginTradingDemo));
+            builder.RegisterInstance(settings.CurrentValue).SingleInstance();
             builder.RegisterInstance(settings).SingleInstance();
             builder.RegisterType<Application>().As<IBrokerApplication>().SingleInstance();
 

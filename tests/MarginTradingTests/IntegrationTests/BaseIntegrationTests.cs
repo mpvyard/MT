@@ -30,7 +30,7 @@ namespace MarginTradingTests.IntegrationTests
             ).SingleInstance();
 
             builder.Register<IClientAccountsRepository>(ctx =>
-               AzureRepoFactories.Clients.CreateClientsRepository(configuration["ClientInfoConnString"], null)
+               AzureRepoFactories.Clients.CreateClientsRepository(configuration["ClientInfoConnString"].MakeSettings(), null)
             ).SingleInstance();
 
             builder.RegisterType<ClientAccountService>()

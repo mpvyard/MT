@@ -19,8 +19,6 @@ namespace MarginTrading.BrokerBase
 {
     public abstract class BrokerStartupBase<TSettingsRoot> where TSettingsRoot : class, IBrokerSettingsRoot
     {
-        private const string AppSettingsDevFile = "appsettings.dev.json";
-
         public IConfigurationRoot Configuration { get; }
         public IHostingEnvironment Environment { get; }
         public IContainer ApplicationContainer { get; private set; }
@@ -31,7 +29,7 @@ namespace MarginTrading.BrokerBase
         {
             Configuration = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile(AppSettingsDevFile, true, true)
+                .AddJsonFile("appsettings.dev.json", true, true)
                 .AddEnvironmentVariables()
                 .Build();
 
@@ -61,27 +59,9 @@ namespace MarginTrading.BrokerBase
             return new AutofacServiceProvider(ApplicationContainer);
         }
 
-        protected virtual TSettingsRoot GetSettingsRoot()
+        protected virtual IReloadingManager<TSettingsRoot> GetSettingsRoot()
         {
-            TSettingsRoot settingsRoot;
-            string settingsLocation;
-            if (Environment.IsDevelopment())
-            {
-                settingsLocation = AppSettingsDevFile;
-                settingsRoot = Configuration.Get<TSettingsRoot>();
-            }
-            else
-            {
-                settingsLocation = Configuration["SettingsUrl"];
-                settingsRoot = SettingsProcessor.Process<TSettingsRoot>(settingsLocation.GetStringAsync().Result);
-            }
-
-            // ReSharper disable once ConditionIsAlwaysTrueOrFalse
-            if (settingsRoot == null)
-            {
-                throw new InvalidOperationException("Settings not found in " + settingsLocation);
-            }
-            return settingsRoot;
+            return Configuration.LoadSettings<TSettingsRoot>();
         }
 
         public virtual void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory,
@@ -96,11 +76,11 @@ namespace MarginTrading.BrokerBase
             appLifetime.ApplicationStopped.Register(() => ApplicationContainer.Dispose());
         }
 
-        protected abstract void RegisterCustomServices(IServiceCollection services, ContainerBuilder builder,
-            TSettingsRoot settingsRoot, ILog log, bool isLive);
+        protected abstract void RegisterCustomServices(IServiceCollection services, ContainerBuilder builder, IReloadingManager<TSettingsRoot> settingsRoot, ILog log, bool isLive);
 
-        protected virtual ILog CreateLogWithSlack(IServiceCollection services, TSettingsRoot settings)
+        protected virtual ILog CreateLogWithSlack(IServiceCollection services, IReloadingManager<TSettingsRoot> settingsManager)
         {
+            var settings = settingsManager.CurrentValue;
             var logToConsole = new LogToConsole();
             var logAggregate = new LogAggregate();
 
@@ -116,7 +96,8 @@ namespace MarginTrading.BrokerBase
             if (!string.IsNullOrEmpty(dbLogConnectionString) &&
                 !(dbLogConnectionString.StartsWith("${") && dbLogConnectionString.EndsWith("}")))
             {
-                var logToAzureStorage = services.UseLogToAzureStorage(dbLogConnectionString, slackService,
+                // ReSharper disable once PossibleNullReferenceException
+                var logToAzureStorage = services.UseLogToAzureStorage(settingsManager.Nested(s => s.MtBrokersLogs.DbConnString), slackService,
                     ApplicationName + "Log",
                     logToConsole);
 
@@ -128,7 +109,7 @@ namespace MarginTrading.BrokerBase
         }
 
 
-        private void RegisterServices(IServiceCollection services, TSettingsRoot settingsRoot,
+        private void RegisterServices(IServiceCollection services, IReloadingManager<TSettingsRoot> settingsRoot,
             ContainerBuilder builder,
             bool isLive)
         {
