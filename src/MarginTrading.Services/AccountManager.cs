@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Autofac;
 using Common;
 using Common.Log;
+using MarginTrading.AzureRepositories.Reports;
 using MarginTrading.Core;
 using MarginTrading.Core.Settings;
 
@@ -22,6 +22,8 @@ namespace MarginTrading.Services
         private readonly ITradingConditionsCacheService _tradingConditionsCacheService;
         private readonly ILog _log;
         private readonly IClientNotifyService _clientNotifyService;
+        private readonly IAccountsStatsReportsRepository _accountsStatsReportsRepository;
+        private readonly IAccountsReportsRepository _accountsReportsRepository;
         private readonly IMarginTradingAccountStatsRepository _statsRepository;
 
 
@@ -35,6 +37,8 @@ namespace MarginTrading.Services
             ITradingConditionsCacheService tradingConditionsCacheService,
             ILog log,
             IClientNotifyService clientNotifyService,
+            IAccountsStatsReportsRepository accountsStatsReportsRepository,
+            IAccountsReportsRepository accountsReportsRepository,
             IMarginTradingAccountStatsRepository statsRepository)
             : base(nameof(AccountManager), 10000, log)
         {
@@ -48,6 +52,8 @@ namespace MarginTrading.Services
             _tradingConditionsCacheService = tradingConditionsCacheService;
             _log = log;
             _clientNotifyService = clientNotifyService;
+            _accountsStatsReportsRepository = accountsStatsReportsRepository;
+            _accountsReportsRepository = accountsReportsRepository;
             _statsRepository = statsRepository;
         }
 
@@ -55,8 +61,8 @@ namespace MarginTrading.Services
         {
             var accounts = _accountsCacheService.GetAll();
             var statsWritingTask = WriteAccountsStats(accounts);
-
-            return Task.WhenAll(statsWritingTask); // for easier merge with LWDEV-2929
+            var writeAccountsStatsReportsTask = WriteAccountsStatsReports(accounts);
+            return Task.WhenAll(statsWritingTask, writeAccountsStatsReportsTask);
         }
 
         private Task WriteAccountsStats(IReadOnlyList<MarginTradingAccount> accounts)
@@ -80,23 +86,69 @@ namespace MarginTrading.Services
             return _statsRepository.InsertOrReplaceBatchAsync(stats);
         }
 
+
+
+        private Task WriteAccountsStatsReports(IReadOnlyList<MarginTradingAccount> accounts)
+        {
+            var stats = accounts.Select(a => new AccountsStatReport
+            {
+                AccountId = a.Id,
+                ClientId = a.ClientId,
+                TradingConditionId = a.TradingConditionId,
+                BaseAssetId = a.BaseAssetId,
+                Balance = a.Balance,
+                WithdrawTransferLimit = a.WithdrawTransferLimit,
+                MarginCall = a.GetMarginCall(),
+                StopOut = a.GetStopOut(),
+                TotalCapital = a.GetTotalCapital(),
+                FreeMargin = a.GetFreeMargin(),
+                MarginAvailable = a.GetMarginAvailable(),
+                UsedMargin = a.GetUsedMargin(),
+                MarginInit = a.GetMarginInit(),
+                PnL = a.GetPnl(),
+                OpenPositionsCount = a.GetOpenPositionsCount(),
+                MarginUsageLevel = a.GetMarginUsageLevel(),
+                IsLive = _marginSettings.IsLive
+            });
+
+            return _accountsStatsReportsRepository.InsertOrReplaceBatchAsync(stats);
+        }
+
+        private Task WriteAccountsReports(IEnumerable<MarginTradingAccount> accounts)
+        {
+            var reports = accounts.Select(a => new AccountsReport
+            {
+                TakerAccountId = a.Id,
+                TakerCounterpartyId = a.ClientId,
+                BaseAssetId = a.BaseAssetId,
+                IsLive = _marginSettings.IsLive
+            });
+
+            return _accountsReportsRepository.InsertOrReplaceBatchAsync(reports);
+        }
+
         public override void Start()
         {
-            var accounts = _repository.GetAllAsync().Result.Select(MarginTradingAccount.Create).GroupBy(x => x.ClientId).ToDictionary(x => x.Key, x => x.ToArray());
+            var accounts = _repository.GetAllAsync().GetAwaiter().GetResult()
+                .Select(MarginTradingAccount.Create).GroupBy(x => x.ClientId).ToDictionary(x => x.Key, x => x.ToArray());
+
             _accountsCacheService.InitAccountsCache(accounts);
             _console.WriteLine($"InitAccountsCache (clients count:{accounts.Count})");
 
             base.Start();
         }
 
-        public async Task UpdateAccountsCacheAsync(string clientId, IEnumerable<MarginTradingAccount> accounts = null)
+        private async Task ProcessAccountsSetChange(string clientId, IReadOnlyList<MarginTradingAccount> allClientsAccounts = null)
         {
-            if (accounts == null)
-                accounts = (await _repository.GetAllAsync(clientId)).Select(MarginTradingAccount.Create);
+            if (allClientsAccounts == null)
+            {
+                allClientsAccounts = (await _repository.GetAllAsync(clientId)).Select(MarginTradingAccount.Create).ToList();
+            }
 
-            _accountsCacheService.UpdateAccountsCache(clientId, accounts);
-
-            await _rabbitMqNotifyService.UserUpdates(false, true, new [] {clientId});
+            _accountsCacheService.UpdateAccountsCache(clientId, allClientsAccounts);
+            await Task.WhenAll(
+                WriteAccountsReports(allClientsAccounts),
+                _rabbitMqNotifyService.UserUpdates(false, true, new[] { clientId }));
         }
 
         public async Task UpdateBalanceAsync(string clientId, string accountId, double amount, AccountHistoryType historyType, string comment, bool changeTransferLimit = false)
@@ -152,7 +204,7 @@ namespace MarginTrading.Services
         public async Task DeleteAccountAsync(string clientId, string accountId)
         {
             await _repository.DeleteAsync(clientId, accountId);
-            await UpdateAccountsCacheAsync(clientId);
+            await ProcessAccountsSetChange(clientId);
         }
 
         //TODO: close/remove all orders
@@ -171,7 +223,7 @@ namespace MarginTrading.Services
         {
             var account = CreateAccount(clientId, baseAssetId, tradingConditionId);
             await _repository.AddAsync(account);
-            await UpdateAccountsCacheAsync(account.ClientId);
+            await ProcessAccountsSetChange(account.ClientId);
         }
 
         public async Task<MarginTradingAccount[]> CreateDefaultAccounts(string clientId, string tradingConditionsId = null)
@@ -207,7 +259,7 @@ namespace MarginTrading.Services
                 }
             }
 
-            await UpdateAccountsCacheAsync(clientId, newAccounts);
+            await ProcessAccountsSetChange(clientId, newAccounts);
 
             return newAccounts.ToArray();
         }
