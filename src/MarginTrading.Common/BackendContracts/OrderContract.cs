@@ -9,6 +9,7 @@ namespace MarginTrading.Common.BackendContracts
         public string Id { get; set; }
         public string ClientId { get; set; }
         public string AccountId { get; set; }
+        public string AccountAssetId { get; set; }
         public string Instrument { get; set; }
         public OrderDirection Type { get; set; }
         public OrderStatus Status { get; set; }
@@ -26,8 +27,11 @@ namespace MarginTrading.Common.BackendContracts
         public double MatchedCloseVolume { get; set; }
         public double? TakeProfit { get; set; }
         public double? StopLoss { get; set; }
-        public double? Fpl { get; set; }
-        public double? PnL { get; set; }
+        /// <summary> Floating profit </summary>
+        public double Fpl { get; set; }
+        /// <summary> Total profit </summary>
+        /// <remarks> Fpl + comissions </remarks>
+        public double PnL { get; set; }
         public double OpenCommission { get; set; }
         public double CloseCommission { get; set; }
         public double SwapCommission { get; set; }
