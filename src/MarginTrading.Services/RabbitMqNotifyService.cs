@@ -8,6 +8,7 @@ using MarginTrading.Common.RabbitMqMessages;
 using MarginTrading.Common.RabbitMqMessageModels;
 using MarginTrading.Core;
 using MarginTrading.Core.Enums;
+using MarginTrading.Core.RabbitMqMessages;
 using MarginTrading.Core.Settings;
 
 namespace MarginTrading.Services
@@ -71,13 +72,6 @@ namespace MarginTrading.Services
             return AccountChanged(account, AccountEventTypeEnum.Updated);
         }
 
-        public Task AccountMarginEvent(IMarginTradingAccount account, bool isStopout, DateTime eventTime)
-        {
-            return TryProduceMessageAsync(_settings.RabbitMqQueues.AccountMarginEvents.ExchangeName,
-                AccountMarginEventMessage.Create(account, isStopout, eventTime));
-
-        }
-
         public Task AccountDeleted(IMarginTradingAccount account)
         {
             return AccountChanged(account, AccountEventTypeEnum.Deleted);
@@ -97,6 +91,12 @@ namespace MarginTrading.Services
             };
 
             return TryProduceMessageAsync(_settings.RabbitMqQueues.AccountChanged.ExchangeName, message);
+        }
+
+        public Task AccountMarginEvent(AccountMarginEventMessage eventMessage)
+        {
+            return TryProduceMessageAsync(_settings.RabbitMqQueues.AccountMarginEvents.ExchangeName, eventMessage);
+
         }
 
         public Task AccountStopout(string clientId, string accountId, int positionsCount, decimal totalPnl)
