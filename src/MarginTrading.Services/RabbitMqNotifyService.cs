@@ -4,7 +4,6 @@ using Autofac.Features.Indexed;
 using Common;
 using Common.Log;
 using MarginTrading.Common.Mappers;
-using MarginTrading.Common.RabbitMqMessages;
 using MarginTrading.Common.RabbitMqMessageModels;
 using MarginTrading.Core;
 using MarginTrading.Core.Enums;
