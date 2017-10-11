@@ -51,7 +51,7 @@ namespace MarginTrading.Frontend
 
         public async Task ProcessPrices(InstrumentBidAskPair bidAskPair)
         {
-            //_allPairsSubject.OnNext(bidAskPair);
+            _allPairsSubject.OnNext(bidAskPair);
             GetInstrumentPriceSubject(bidAskPair.Instrument).OnNext(bidAskPair);
             await Task.FromResult(0);
         }
