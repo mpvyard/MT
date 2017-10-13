@@ -37,7 +37,7 @@ namespace MarginTrading.Common.Wamp
         Task<OpenOrderBackendResponse> PlaceOrder(OpenOrderBackendRequest request);
 
         [WampProcedure("order.close")]
-        MtBackendResponse<bool> CloseOrder(CloseOrderBackendRequest request);
+        Task<MtBackendResponse<bool>> CloseOrder(CloseOrderBackendRequest request);
 
         [WampProcedure("order.list")]
         OrderBackendContract[] GetOpenPositions(ClientIdBackendRequest request);
