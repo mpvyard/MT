@@ -3,8 +3,9 @@ using AzureStorage;
 using AzureStorage.Tables;
 using Common.Log;
 using MarginTrading.Core.Settings;
+using MarginTrading.Core;
 
-namespace MarginTrading.AccountHistoryBroker.AzureRepositories
+namespace MarginTrading.AccountHistoryBroker.Repositories.AzureRepositories
 {
     internal class AccountTransactionsReportsRepository : IAccountTransactionsReportsRepository
     {
@@ -16,9 +17,9 @@ namespace MarginTrading.AccountHistoryBroker.AzureRepositories
                 "MarginTradingAccountTransactionsReports", log);
         }
 
-        public Task InsertOrReplaceAsync(AccountTransactionsReportsEntity entity)
+        public Task InsertOrReplaceAsync(IAccountTransactionsReport entity)
         {
-            return _tableStorage.InsertOrReplaceAsync(entity);
+            return _tableStorage.InsertOrReplaceAsync(AccountTransactionsReportsEntity.Create(entity));
         }
     }
 }

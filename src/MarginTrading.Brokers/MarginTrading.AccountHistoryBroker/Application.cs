@@ -1,7 +1,7 @@
 ﻿using System.Threading.Tasks;
 using Common.Log;
 using Lykke.RabbitMqBroker.Subscriber;
-using MarginTrading.AccountHistoryBroker.AzureRepositories;
+using MarginTrading.AccountHistoryBroker.Repositories;
 using MarginTrading.BrokerBase;
 using MarginTrading.BrokerBase.Settings;
 using MarginTrading.Common.BackendContracts;
@@ -9,6 +9,7 @@ using MarginTrading.Common.Mappers;
 using MarginTrading.Common.RabbitMq;
 using MarginTrading.Core;
 using MarginTrading.Core.Settings;
+using MarginTrading.AccountHistoryBroker.Repositories.Models;
 
 namespace MarginTrading.AccountHistoryBroker
 {
@@ -43,17 +44,18 @@ namespace MarginTrading.AccountHistoryBroker
         protected override Task HandleMessage(AccountHistoryBackendContract accountHistoryContract)
         {
             var accountHistory = accountHistoryContract.ToAccountHistoryContract();
-            var accountTransactionReport = new AccountTransactionsReportsEntity
+            var accountTransactionReport = new AccountTransactionsReport
             {
                 AccountId = accountHistoryContract.AccountId,
                 ClientId = accountHistoryContract.ClientId,
                 Comment = accountHistoryContract.Comment,
                 Id = accountHistoryContract.Id,
-                Amount = (double) accountHistoryContract.Amount,
-                Balance = (double) accountHistoryContract.Balance,
+                Amount = accountHistoryContract.Amount,
+                Balance = accountHistoryContract.Balance,
                 Date = accountHistoryContract.Date,
                 Type = accountHistoryContract.Type.ToString(),
-                WithdrawTransferLimit = (double) accountHistoryContract.WithdrawTransferLimit,
+                WithdrawTransferLimit = accountHistoryContract.WithdrawTransferLimit,
+                //TODO: Check PositionId field
             };
             
             return Task.WhenAll(
