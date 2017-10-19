@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Lykke.SettingsReader.Attributes;
 
 namespace MarginTrading.Core.Settings
@@ -87,13 +88,14 @@ namespace MarginTrading.Core.Settings
         public bool IsDurable { get; set; }
     }
 
-    public class MarketMakerSettings
+    public class ScheduleSettings
     {
-        public string DayOffStartDay { get; set; }
-        public int DayOffStartHour { get; set; }
-        public string DayOffEndDay { get; set; }
-        public int DayOffEndHour { get; set; }
-        public string[] AssetsWithoutDayOff { get; set; }
+        public DayOfWeek DayOffStartDay { get; set; }
+        public TimeSpan DayOffStartTime { get; set; }
+        public DayOfWeek DayOffEndDay { get; set; }
+        public TimeSpan DayOffEndTime { get; set; }
+        public string[] AssetPairsWithoutDayOff { get; set; }
+        public TimeSpan PendingOrdersCutOff { get; set; }
     }
 
     public class AccountAssetsSettings

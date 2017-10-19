@@ -102,7 +102,8 @@ namespace MarginTrading.Core
         StopLoss,
         TakeProfit,
         StopOut,
-        Canceled
+        CanceledByUser,
+        CanceledBySystem
     }
 
     public enum OrderRejectReason
@@ -186,7 +187,9 @@ namespace MarginTrading.Core
                             break;
                     }
 
-                    message = order.ExpectedOpenPrice.HasValue && order.CloseReason == OrderCloseReason.Canceled
+                    message = order.ExpectedOpenPrice.HasValue && 
+                              (order.CloseReason == OrderCloseReason.CanceledByUser || 
+                               order.CloseReason == OrderCloseReason.CanceledBySystem)
                         ? string.Format(MtMessages.Notifications_PendingOrderCanceled, type, order.Instrument, volume)
                         : string.Format(MtMessages.Notifications_OrderClosed, type, order.Instrument, volume, reason,
                             order.GetTotalFpl().ToString($"F{MarginTradingHelpers.DefaultAssetAccuracy}"));
