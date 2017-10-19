@@ -9,7 +9,6 @@ namespace MarginTrading.Common.BackendContracts
         public string TradingConditionId { get; set; }
         public decimal QuoteRate { get; set; }
         public int AssetAccuracy { get; set; }
-        public decimal CommissionLot { get; set; }
         public DateTime? StartClosingDate { get; set; }
         public OrderFillType FillType { get; set; }
         public string Comment { get; set; }
