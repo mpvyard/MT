@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Lykke.Common;
 using MarginTrading.Core;
+using MarginTrading.Core.Assets;
 using MarginTrading.Core.Exceptions;
 using MarginTrading.Core.MatchedOrders;
 using MarginTrading.Services.Events;
@@ -33,6 +34,7 @@ namespace MarginTrading.Services
         private readonly IThreadSwitcher _threadSwitcher;
         private readonly IMatchingEngineRepository _meRepository;
         private readonly IContextFactory _contextFactory;
+        private readonly IAssetPairDayOffService _assetPairDayOffService;
 
         public TradingEngine(
             IEventChannel<MarginCallEventArgs> marginCallEventChannel,
@@ -52,7 +54,9 @@ namespace MarginTrading.Services
             IAccountAssetsCacheService accountAssetsCacheService,
             IMatchingEngineRouter meRouter,
             IThreadSwitcher threadSwitcher,
-            IMatchingEngineRepository meRepository, IContextFactory contextFactory)
+            IMatchingEngineRepository meRepository, 
+            IContextFactory contextFactory,
+            IAssetPairDayOffService assetPairDayOffService)
         {
             _marginCallEventChannel = marginCallEventChannel;
             _stopoutEventChannel = stopoutEventChannel;
@@ -73,6 +77,7 @@ namespace MarginTrading.Services
             _threadSwitcher = threadSwitcher;
             _meRepository = meRepository;
             _contextFactory = contextFactory;
+            _assetPairDayOffService = assetPairDayOffService;
         }
 
         public async Task<Order> PlaceOrderAsync(Order order)
@@ -296,7 +301,8 @@ namespace MarginTrading.Services
                 {
                     var price = pair.GetPriceForOrderType(order.GetCloseType());
 
-                    if (order.IsSuitablePriceForPendingOrder(price))
+                    if (order.IsSuitablePriceForPendingOrder(price) &&
+                        !_assetPairDayOffService.IsPendingOrderDisabled(order.Instrument))
                         yield return order;
                 }
             }
