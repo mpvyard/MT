@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Linq;
-using System.Threading.Tasks;
 using MarginTrading.Common.Extensions;
 using MarginTrading.Core;
+using MarginTrading.Core.Assets;
 using MarginTrading.Core.MarketMakerFeed;
 
 namespace MarginTrading.Services
@@ -10,9 +10,9 @@ namespace MarginTrading.Services
     public class MarketMakerService : IFeedConsumer
     {
         private readonly IMatchingEngine _matchingEngine;
-        private readonly AssetPairDayOffService _assetPairDayOffService;
+        private readonly IAssetPairDayOffService _assetPairDayOffService;
 
-        public MarketMakerService(IMatchingEngine matchingEngine, AssetPairDayOffService assetPairDayOffService)
+        public MarketMakerService(IMatchingEngine matchingEngine, IAssetPairDayOffService assetPairDayOffService)
         {
             _matchingEngine = matchingEngine;
             _assetPairDayOffService = assetPairDayOffService;
