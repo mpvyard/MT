@@ -25,8 +25,7 @@ namespace MarginTrading.MarketMaker.AzureRepositories.Entities
             set => RowKey = value;
         }
 
-        public double AskMarkup { get; set; }
-        public double BidMarkup { get; set; }
+        public MarkupsParams Markups { get; set; } = new MarkupsParams();
         public string PresetDefaultExchange { get; set; }
         public double OutlierThreshold { get; set; }
         public RepeatedOutliersParams RepeatedOutliers { get; set; } = new RepeatedOutliersParams();
@@ -37,13 +36,14 @@ namespace MarginTrading.MarketMaker.AzureRepositories.Entities
         [CanBeNull]
         private ImmutableDictionary<OrderbookGeneratorStepEnum, bool> _stepsCache;
 
+        [IgnoreProperty]
         public ImmutableDictionary<OrderbookGeneratorStepEnum, bool> Steps
         {
             get => _stepsCache ?? (_stepsCache = StepsStr == null
                        ? ImmutableDictionary<OrderbookGeneratorStepEnum, bool>.Empty
                        : JsonConvert.DeserializeObject<ImmutableDictionary<OrderbookGeneratorStepEnum, bool>>(StepsStr));
-            
-            set => StepsStr = JsonConvert.SerializeObject(_stepsCache = value);
+
+            set => StepsStr = JsonConvert.SerializeObject(_stepsCache = value ?? ImmutableDictionary<OrderbookGeneratorStepEnum, bool>.Empty);
         }
 
         /// <inheritdoc />
@@ -69,6 +69,12 @@ namespace MarginTrading.MarketMaker.AzureRepositories.Entities
         public override IDictionary<string, EntityProperty> WriteEntity(OperationContext operationContext)
         {
             return Flatten(this, operationContext);
+        }
+
+        public class MarkupsParams
+        {
+            public double Bid { get; set; }
+            public double Ask { get; set; }
         }
 
         public class RepeatedOutliersParams

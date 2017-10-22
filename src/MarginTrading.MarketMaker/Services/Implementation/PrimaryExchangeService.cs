@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Immutable;
 using System.Linq;
+using Common;
 using JetBrains.Annotations;
 using MarginTrading.MarketMaker.Enums;
 using MarginTrading.MarketMaker.HelperServices.Implemetation;
@@ -35,9 +36,11 @@ namespace MarginTrading.MarketMaker.Services.Implementation
 
             var primaryExchange = _primaryExchanges.GetOrDefault(assetPairId);
             var hedgingPreferences = _hedgingPreferenceService.Get(assetPairId);
+            var originalPrimaryExchange = primaryExchange;
 
             void SwitchPrimaryExchange()
             {
+                originalPrimaryExchange = primaryExchange;
                 var (newPrimary, all) = ChooseBackupExchange(assetPairId, exchanges, hedgingPreferences);
                 primaryExchange = newPrimary.Exchange;
                 _primaryExchanges[assetPairId] = primaryExchange;
@@ -58,18 +61,18 @@ namespace MarginTrading.MarketMaker.Services.Implementation
                 return primaryExchange;
             }
 
-            var primaryExchangeState = exchanges[primaryExchange];
-            var primaryPreference = hedgingPreferences.GetValueOrDefault(primaryExchange);
-            var originalPrimaryExchange = primaryExchange;
             var cycleCounter = 0;
             do
             {
                 if (cycleCounter++ >= 2)
                 {
                     // Guard - in case somehow an Outdated or Disabled exchange gets chosen second time - restrict endless loop
-                    throw new InvalidOperationException("Unable to get primary exchange for assetPair " + assetPairId);
+                    throw new InvalidOperationException(
+                        $"Unable to get primary exchange for assetPair {assetPairId} after {cycleCounter - 1} cycles");
                 }
 
+                var primaryExchangeState = exchanges[primaryExchange];
+                var primaryPreference = hedgingPreferences.GetValueOrDefault(primaryExchange);
                 switch (primaryExchangeState)
                 {
                     case ExchangeErrorState.None when primaryPreference > 0:
@@ -82,7 +85,7 @@ namespace MarginTrading.MarketMaker.Services.Implementation
                         SwitchPrimaryExchange();
                         _alertService.AlertRiskOfficer(
                             $"Primary exchange {originalPrimaryExchange} for {assetPairId} is not usable any more " +
-                            $"because it became {primaryExchangeState} with hedgind priority {primaryPreference}.\r\n" +
+                            $"because it has error state {primaryExchangeState} and hedging priority {primaryPreference}.\r\n" +
                             $"A new primary exchange has been chosen: {primaryExchange}");
                         break;
                 }
@@ -106,9 +109,9 @@ namespace MarginTrading.MarketMaker.Services.Implementation
                 .Select(p => GetExchangeQuality(p.Key, p.Value))
                 .ToImmutableArray();
             var allHedgingPriorities = exchangeQualities
-                .Where(p => p.State != null && p.State != ExchangeErrorState.Disabled)
+                .Where(p => p.Error != null && p.Error != ExchangeErrorState.Disabled)
                 // ReSharper disable once PossibleInvalidOperationException
-                .ToLookup(t => t.State.Value);
+                .ToLookup(t => t.Error.Value);
 
             var primary = allHedgingPriorities[ExchangeErrorState.None]
                 .OrderByDescending(p => p.Preference)
@@ -116,6 +119,7 @@ namespace MarginTrading.MarketMaker.Services.Implementation
 
             if (primary != null && primary.Preference > 0)
             {
+                _alertService.AlertAllowNewTrades(assetPairId, "Switched to a good exchange: " + primary.ToJson());
                 return (primary, exchangeQualities);
             }
 
