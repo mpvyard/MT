@@ -102,7 +102,7 @@ namespace MarginTrading.Core
         StopLoss,
         TakeProfit,
         StopOut,
-        CanceledByUser,
+        Canceled,
         CanceledBySystem
     }
 
@@ -188,7 +188,7 @@ namespace MarginTrading.Core
                     }
 
                     message = order.ExpectedOpenPrice.HasValue && 
-                              (order.CloseReason == OrderCloseReason.CanceledByUser || 
+                              (order.CloseReason == OrderCloseReason.Canceled || 
                                order.CloseReason == OrderCloseReason.CanceledBySystem)
                         ? string.Format(MtMessages.Notifications_PendingOrderCanceled, type, order.Instrument, volume)
                         : string.Format(MtMessages.Notifications_OrderClosed, type, order.Instrument, volume, reason,
