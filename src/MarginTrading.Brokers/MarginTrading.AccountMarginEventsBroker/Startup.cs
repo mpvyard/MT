@@ -1,6 +1,8 @@
 ﻿using Autofac;
 using Common.Log;
-using MarginTrading.AccountMarginEventsBroker.AzureRepositories;
+using MarginTrading.AccountMarginEventsBroker.Repositories;
+using MarginTrading.AccountMarginEventsBroker.Repositories.AzureRepositories;
+using MarginTrading.AccountMarginEventsBroker.Repositories.SqlRepositories;
 using MarginTrading.BrokerBase;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +26,9 @@ namespace MarginTrading.AccountMarginEventsBroker
             builder.RegisterInstance(settings).SingleInstance();
             builder.RegisterType<Application>().As<IBrokerApplication>().SingleInstance();
 
-            builder.RegisterType<AccountMarginEventsReportsRepository>().As<IAccountMarginEventsReportsRepository>()
+            //builder.RegisterType<AccountMarginEventsReportsRepository>().As<IAccountMarginEventsReportsRepository>()
+            //    .SingleInstance();
+            builder.RegisterType<AccountMarginEventsReportsSqlRepository>().As<IAccountMarginEventsReportsRepository>()
                 .SingleInstance();
         }
     }
